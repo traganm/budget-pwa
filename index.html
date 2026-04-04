@@ -442,14 +442,19 @@
         <div class="form-group">
           <label class="form-label">Category</label>
           <select id="f-cat" class="form-select">
-            <option>Groceries</option>
-            <option>Dining</option>
-            <option>Gas / Transport</option>
-            <option>Health / Pharmacy</option>
+            <option>Grocery &amp; Food</option>
+            <option>Dining &amp; Outing</option>
+            <option>Gas &amp; Fuel</option>
+            <option>Essentials &amp; Home</option>
+            <option>Pets &amp; Needs</option>
+            <option>Kids — Ahri</option>
+            <option>Medical &amp; Health</option>
             <option>Personal Care</option>
-            <option>Entertainment</option>
             <option>Clothing</option>
-            <option>Misc / Other</option>
+            <option>Vietnam / Remote</option>
+            <option>Planned Events</option>
+            <option>Emergency / MISC</option>
+            <option>Other</option>
           </select>
         </div>
 
@@ -480,7 +485,7 @@ const API   = 'https://script.google.com/macros/s/AKfycbwMxdOWXTt9LHK4JMY_zNb1yl
 const TOKEN = 'kimchi'; // must match webapp.gs
 
 // ── STATE ──────────────────────────────────────────────────
-let state = { summary: null, log: null, goals: null };
+let state = { summary: null, log: null, goals: null, debt: null };
 
 // ── INIT ───────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -506,14 +511,14 @@ function switchTab(name) {
 
   // Lazy load
   if (name === 'log'   && !state.log)   fetchLog();
-  if (name === 'goals' && !state.goals) fetchGoals();
+  if (name === 'goals' && (!state.goals || !state.debt)) fetchGoalsAndDebt();
 }
 
 // ── SYNC ───────────────────────────────────────────────────
 async function syncAll() {
   const btn = document.getElementById('sync-btn');
   btn.classList.add('spinning');
-  await Promise.all([fetchSummary(), fetchLog(), fetchGoals()]);
+  await Promise.all([fetchSummary(), fetchLog(), fetchGoalsAndDebt()]);
   btn.classList.remove('spinning');
 }
 
@@ -553,10 +558,13 @@ async function fetchLog() {
   } catch (e) { /* silent */ }
 }
 
-// ── FETCH GOALS ────────────────────────────────────────────
-async function fetchGoals() {
+// ── FETCH GOALS + DEBT ─────────────────────────────────────
+async function fetchGoalsAndDebt() {
   try {
-    state.goals = await apiFetch({ action: 'goals' });
+    [state.goals, state.debt] = await Promise.all([
+      apiFetch({ action: 'goals' }),
+      apiFetch({ action: 'debt' }),
+    ]);
     renderGoals();
   } catch (e) { /* silent */ }
 }
@@ -666,10 +674,11 @@ function renderLog() {
 // ── RENDER GOALS ───────────────────────────────────────────
 function renderGoals() {
   const g = state.goals;
+  const d = state.debt;
   if (!g || !g.ok) return;
 
-  const goalRows = g.goals.map(goal => {
-    const pct = goal.pct * 100;
+  const goalRows = (g.goals || []).map(goal => {
+    const pct = (goal.pct || 0) * 100;
     return `
       <div class="goal-item">
         <div class="goal-header">
@@ -683,26 +692,49 @@ function renderGoals() {
       </div>`;
   }).join('');
 
-  const debtRows = g.debts.filter(d => d.balance > 0).map(d => `
+  // Credit cards with a balance
+  const cardRows = d && d.ok ? (d.cards || []).filter(c => c.balance > 0).map(c => `
     <div class="debt-item">
       <div class="debt-header">
-        <span class="debt-name">${d.name}</span>
-        <span class="debt-bal">${fmt(d.balance)}</span>
+        <span class="debt-name">${c.name}</span>
+        <span class="debt-bal">${fmt(c.balance)}</span>
       </div>
-      <div class="debt-sub">${(d.rate*100).toFixed(2)}% · Min ${fmt(d.minPay)}/mo</div>
-    </div>`).join('');
+      <div class="debt-sub">${(c.rate*100).toFixed(1)}% APR · Min ${fmt(c.minPay)}/mo${c.strategy ? ' · ' + c.strategy : ''}</div>
+    </div>`).join('') : '';
+
+  // Loans
+  const loanRows = d && d.ok ? (d.loans || []).filter(l => l.balance > 0).map(l => `
+    <div class="debt-item">
+      <div class="debt-header">
+        <span class="debt-name">${l.name}</span>
+        <span class="debt-bal">${fmt(l.balance)}</span>
+      </div>
+      <div class="debt-sub">${(l.rate*100).toFixed(2)}% · ${fmt(l.monthlyPay)}/mo</div>
+    </div>`).join('') : '';
+
+  const totalDebt = d && d.ok ? d.totalDebt : 0;
+  const totalCards = d && d.ok ? d.totalCards : 0;
 
   document.getElementById('goals-content').innerHTML = `
     <div class="section-label">Savings Goals</div>
     <div class="card" style="padding:8px 16px">${goalRows || '<div class="empty" style="padding:16px 0;font-size:13px">No goals configured</div>'}</div>
 
-    <div class="section-label">Debt Tracker</div>
+    <div class="section-label">Credit Cards</div>
     <div class="card" style="padding:8px 16px">
-      ${debtRows || '<div class="empty" style="padding:16px 0;font-size:13px">No active debt</div>'}
-      <div class="data-row" style="border-top:1px solid #ffffff10;padding-top:12px;margin-top:4px">
+      ${cardRows || '<div class="empty" style="padding:16px 0;font-size:13px">No active credit card balances</div>'}
+      ${d && d.ok && totalCards > 0 ? `<div class="data-row" style="border-top:1px solid #ffffff10;padding-top:12px;margin-top:4px">
+        <span class="row-label" style="font-weight:700">CC Total</span>
+        <span class="row-value orange">${fmt(totalCards)}</span>
+      </div>` : ''}
+    </div>
+
+    <div class="section-label">Loans</div>
+    <div class="card" style="padding:8px 16px">
+      ${loanRows || '<div class="empty" style="padding:16px 0;font-size:13px">No loan data</div>'}
+      ${d && d.ok ? `<div class="data-row" style="border-top:1px solid #ffffff10;padding-top:12px;margin-top:4px">
         <span class="row-label" style="font-weight:700">Total Debt</span>
-        <span class="row-value orange">${fmt(g.totalDebt)}</span>
-      </div>
+        <span class="row-value orange">${fmt(totalDebt)}</span>
+      </div>` : ''}
     </div>
   `;
 }
@@ -765,9 +797,19 @@ function todayStr() {
 
 function getCatBudget(cat) {
   const budgets = {
-    'Groceries': 400, 'Dining': 200, 'Gas / Transport': 150,
-    'Health / Pharmacy': 80, 'Personal Care': 60,
-    'Entertainment': 100, 'Clothing': 80, 'Misc / Other': 150,
+    'Grocery & Food':    800,
+    'Pets & Needs':      200,
+    'Essentials & Home': 100,
+    'Gas & Fuel':        120,
+    'Dining & Outing':   350,
+    'Emergency / MISC':   50,
+    'Kids — Ahri':         0,
+    'Medical & Health':    0,
+    'Clothing':            0,
+    'Vietnam / Remote':    0,
+    'Planned Events':      0,
+    'Personal Care':       0,
+    'Other':               0,
   };
   return budgets[cat] || 0;
 }
