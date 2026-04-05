@@ -374,6 +374,17 @@
     .debt-name   { color: var(--dim); font-size: 14px; }
     .debt-bal    { color: var(--text); font-size: 14px; font-weight: 600; }
     .debt-sub    { font-size: 11px; color: var(--off); margin-top: 3px; }
+
+    /* ── TIPS ──────────────────────────────────────────── */
+    .tip-item { padding: 14px 0; border-bottom: 1px solid #ffffff06; }
+    .tip-item:last-child { border-bottom: none; }
+    .tip-title { color: var(--text); font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+    .tip-detail { color: var(--dim); font-size: 12px; line-height: 1.4; }
+    .tip-meta { display: flex; gap: 8px; margin-top: 6px; font-size: 10px; }
+    .tip-badge { padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+    .tip-badge.priority { background: #2a1208; color: var(--orange); }
+    .tip-badge.status { background: var(--row-a); color: var(--dim); }
+    .tip-badge.cat { background: var(--row-b); color: var(--off); }
   </style>
 </head>
 <body>
@@ -391,6 +402,7 @@
     <button class="tab" data-view="log">Log</button>
     <button class="tab" data-view="add">+ Add</button>
     <button class="tab" data-view="goals">Goals</button>
+    <button class="tab" data-view="tips">Tips</button>
   </div>
 
   <!-- SCROLL AREA -->
@@ -522,6 +534,11 @@
       <div id="goals-content"><div class="loading"><span class="dot-pulse">Loading</span></div></div>
     </div>
 
+    <!-- ── MONEY TIPS ──────────────────────────────────── -->
+    <div id="view-tips" class="view">
+      <div id="tips-content"><div class="loading"><span class="dot-pulse">Loading</span></div></div>
+    </div>
+
   </div><!-- /scroll -->
 
 </div><!-- /app -->
@@ -535,7 +552,7 @@ const API   = 'https://script.google.com/macros/s/AKfycbwMxdOWXTt9LHK4JMY_zNb1yl
 const TOKEN = 'kimchi'; // must match webapp.gs
 
 // ── STATE ──────────────────────────────────────────────────
-let state = { summary: null, log: null, goals: null, debt: null };
+let state = { summary: null, log: null, goals: null, debt: null, tips: null };
 
 // ── INIT ───────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -562,6 +579,7 @@ function switchTab(name) {
   // Lazy load
   if (name === 'log'   && !state.log)   fetchLog();
   if (name === 'goals' && (!state.goals || !state.debt)) fetchGoalsAndDebt();
+  if (name === 'tips'  && !state.tips) fetchTips();
 }
 
 // ── SYNC ───────────────────────────────────────────────────
@@ -862,6 +880,49 @@ function getCatBudget(cat) {
     'Other':               0,
   };
   return budgets[cat] || 0;
+}
+
+// ── FETCH + RENDER TIPS ───────────────────────────────────
+async function fetchTips() {
+  try {
+    state.tips = await apiFetch({ action: 'tips' });
+    renderTips();
+  } catch (e) { /* silent */ }
+}
+
+function renderTips() {
+  const t = state.tips;
+  if (!t || !t.ok || !t.tips || !t.tips.length) {
+    document.getElementById('tips-content').innerHTML = '<div class="empty"><div class="icon">💡</div>No tips available</div>';
+    return;
+  }
+
+  // Group by category
+  const groups = {};
+  t.tips.forEach(tip => {
+    const cat = tip.category || 'General';
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(tip);
+  });
+
+  let html = '';
+  Object.entries(groups).forEach(([cat, tips]) => {
+    html += `<div class="section-label">${cat}</div><div class="card" style="padding:8px 16px">`;
+    tips.forEach(tip => {
+      html += `
+        <div class="tip-item">
+          <div class="tip-title">${tip.title}</div>
+          <div class="tip-detail">${tip.detail}</div>
+          <div class="tip-meta">
+            <span class="tip-badge priority">${tip.priority}</span>
+            <span class="tip-badge status">${tip.status}</span>
+          </div>
+        </div>`;
+    });
+    html += '</div>';
+  });
+
+  document.getElementById('tips-content').innerHTML = html;
 }
 
 // ── FORM TOGGLE (Expense vs Pay Bill) ─────────────────────
