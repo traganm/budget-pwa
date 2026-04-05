@@ -408,7 +408,15 @@
 
     <!-- ── ADD ENTRY ─────────────────────────────────── -->
     <div id="view-add" class="view">
-      <div class="card">
+
+      <!-- Form type toggle -->
+      <div style="display:flex;gap:0;margin-bottom:14px;background:var(--card);border-radius:10px;padding:3px;overflow:hidden">
+        <button class="form-toggle active" data-form="expense" onclick="switchForm('expense')" style="flex:1;background:var(--orange);color:#fff;border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;transition:all .15s">Add Expense</button>
+        <button class="form-toggle" data-form="bill" onclick="switchForm('bill')" style="flex:1;background:transparent;color:var(--off);border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;transition:all .15s">Pay Bill</button>
+      </div>
+
+      <!-- Expense form -->
+      <div id="form-expense" class="card">
         <div class="card-title">New Expense</div>
 
         <div class="form-group">
@@ -464,6 +472,48 @@
         </div>
 
         <button class="btn-primary" id="submit-btn" onclick="submitEntry()">Save Entry</button>
+      </div>
+
+      <!-- Pay Bill form -->
+      <div id="form-bill" class="card" style="display:none">
+        <div class="card-title">Pay a Bill</div>
+
+        <div class="form-group">
+          <label class="form-label">Date</label>
+          <input type="date" id="b-date" class="form-input">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Bill Name</label>
+          <select id="b-bill" class="form-select">
+            <option value="">Loading bills…</option>
+          </select>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Amount</label>
+            <input type="number" id="b-amount" class="form-input" placeholder="0.00" step="0.01" min="0" inputmode="decimal">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Payment</label>
+            <select id="b-payment" class="form-select">
+              <option>Debit</option>
+              <option>Credit</option>
+              <option>Cash</option>
+              <option>Zelle</option>
+              <option>Venmo</option>
+              <option>Other</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Notes (optional)</label>
+          <input type="text" id="b-notes" class="form-input" placeholder="Optional note">
+        </div>
+
+        <button class="btn-primary" id="bill-btn" onclick="submitBillPayment()">Log Payment</button>
       </div>
     </div>
 
@@ -812,6 +862,70 @@ function getCatBudget(cat) {
     'Other':               0,
   };
   return budgets[cat] || 0;
+}
+
+// ── FORM TOGGLE (Expense vs Pay Bill) ─────────────────────
+function switchForm(type) {
+  document.getElementById('form-expense').style.display = type === 'expense' ? 'block' : 'none';
+  document.getElementById('form-bill').style.display    = type === 'bill'    ? 'block' : 'none';
+  document.querySelectorAll('.form-toggle').forEach(btn => {
+    const active = btn.dataset.form === type;
+    btn.style.background = active ? 'var(--orange)' : 'transparent';
+    btn.style.color      = active ? '#fff' : 'var(--off)';
+  });
+  if (type === 'bill') loadBills();
+}
+
+// ── LOAD BILLS DROPDOWN ───────────────────────────────────
+let billsLoaded = false;
+async function loadBills() {
+  if (billsLoaded) return;
+  try {
+    const res = await apiFetch({ action: 'bills' });
+    if (res.ok && res.bills) {
+      const sel = document.getElementById('b-bill');
+      sel.innerHTML = res.bills.map(b => `<option>${b}</option>`).join('')
+        + '<option value="__other">Other (type below)</option>';
+      billsLoaded = true;
+    }
+  } catch (e) { /* silent */ }
+  document.getElementById('b-date').value = todayStr();
+}
+
+// ── SUBMIT BILL PAYMENT ───────────────────────────────────
+async function submitBillPayment() {
+  const btn      = document.getElementById('bill-btn');
+  const date     = document.getElementById('b-date').value;
+  const billName = document.getElementById('b-bill').value;
+  const amount   = parseFloat(document.getElementById('b-amount').value);
+  const payment  = document.getElementById('b-payment').value;
+  const notes    = document.getElementById('b-notes').value.trim();
+
+  if (!date)                    { toast('Please enter a date'); return; }
+  if (!billName)                { toast('Please select a bill'); return; }
+  if (!amount || amount <= 0)   { toast('Please enter a valid amount'); return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
+  try {
+    const res = await apiPost({ action: 'payBill', date, billName, amount, payment, notes });
+    if (res.ok) {
+      toast('✓ ' + res.msg);
+      document.getElementById('b-amount').value = '';
+      document.getElementById('b-notes').value  = '';
+      document.getElementById('b-date').value   = todayStr();
+      state.log = null;
+      state.summary = null;
+    } else {
+      toast('Error: ' + res.error);
+    }
+  } catch (e) {
+    toast('Connection error — check network');
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Log Payment';
 }
 
 let toastTimer;
